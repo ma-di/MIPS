@@ -26,6 +26,9 @@
 	.data
 state: .space 1
 button: .space 1	# 1 byte	walk: 0x01 , car: 0x02
+timer_all: .word 0		#  overall timer
+timer_org: .word 0	# timer for orange
+
     .ktext 0x80000180     # interrup starter
     la $k0, int_routine
     jr $k0
@@ -62,7 +65,7 @@ int_routine:
     sw $at, 16($sp) 
     sw $t0, 12($sp)
     sw $t1, 8($sp)
-    sw $s0, 4($sp)
+    sw $s0, 4($sp)	# overal timer
     sw $s1, 0($sp)
 
     mfc0 $k1, $13 #extract EXCCODE field from Cause register
@@ -83,7 +86,10 @@ int_routine:
     b restore
 
 timer:
-	addi $s0, $s0, 1	# Time counter
+	lw $s0, timer_all
+	addi $s0, $s0, 1	# overall time counter
+	sw $s0, timer_all
+	
 	lb $t0, state		# if ped state and timer greatter than 7 => go to car
 	beq $t0, PRED_CORG, ped	        # state 3: orange
 	beq $t0, PGREEN_CRED, check_car	# state 2: PG_CR
@@ -91,6 +97,7 @@ timer:
 	b restore
 
 check_ped:	
+	lw $s0, timer_all
 	blt $s0, 10, restore    # if (timer >= 10) : ped ? restore
 	lb $t0, button		# it should be reseted after states 1 and 2
 	beq $t0, WALK_BUTTON, ped	
@@ -103,7 +110,11 @@ ped:
     
     li $t0, PRED_CORG   # orange state 0x03
     sb $t0, state
-	addi $s1, $s1, 1	# orange timer
+    
+	lw $s1, timer_org
+	addi $s1, $s1, 1	# orange timer	
+	sw $s1, timer_org
+	
 	blt $s1, 4, restore # if (orange_timer < 4): restore 
 	
     li $t0, RED #switch traffic lights to RED
@@ -115,15 +126,19 @@ ped:
     li $t0, RESET_BUTTON	# to stop the rotational WALK and TRAFFIC LIGHT
     sb $t0, button
     li $s0, 0	# reset overall timer
+    sw $s0, timer_all
     li $s1, 0	# reset orange timer
+    sw $s0, timer_org
     b restore
     
 check_car:
+	lw $s0, timer_all
 	bge $s0, 7, car		# if (timer >= 7): car ? restore
 	b restore
 car:
     lb $t0, state #handling car button
     beq $t0, PRED_CGREEN, restore
+    lw $s1, timer_org
     bge $s1, 4, orange_light # 3-4 time unit flashing red, then orange 
 flashing:
     li $t0, STOP # flashing WALKLIGHT  
@@ -132,13 +147,20 @@ flashing:
     sb $t0, WALKLIGHT
     li $t0, STOP #switch traffic lights and state
     sb $t0, WALKLIGHT
-    addi $s1, $s1, 1
+    
+	lw $s1, timer_org
+	addi $s1, $s1, 1	# orange timer	
+	sw $s1, timer_org    
+
     blt $s1, 4, restore
 orange_light:
 	li $t0, ORANGE #switch traffic lights to ORANGE
     sb $t0, DRIVLIGHT
-    
-    addi $s1, $s1, 1
+
+	lw $s1, timer_org
+	addi $s1, $s1, 1	# orange timer	
+	sw $s1, timer_org 
+	
     blt $s1, 8, restore	# 3-4 time unit orange, then green    
 green:    
     li $t0, GREEN	# green car
@@ -147,8 +169,11 @@ green:
     sb $t0, state
     li $t0, RESET_BUTTON	# to prevent the rotational WALK and TRAFFIC LIGHT
     sb $t0, button
+    
     li $s0, 0	# reset overall timer
+    sw $s0, timer_all
     li $s1, 0	# reset orange timer
+    sw $s1, timer_org
 
 restore: 
     lw $at, 16($sp) # restore registers before leaving
